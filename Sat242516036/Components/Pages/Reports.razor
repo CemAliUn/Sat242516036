@@ -1,0 +1,137 @@
+﻿@page "/reports"
+@using Microsoft.AspNetCore.Authorization
+@using Sat242516036.Data
+@using MyDbModels
+@using Sat242516036.Services
+@using Providers
+
+@attribute [Authorize(Roles = "Admin")]
+
+@inject IMyDbModel_Provider Provider
+@inject ReportService ReportService
+@inject IJSRuntime JS
+@rendermode InteractiveServer
+
+<PageTitle>Rapor Merkezi</PageTitle>
+
+<div class="container-fluid">
+    <h3 class="mb-4">📄 Rapor Önizleme ve İndirme Merkezi</h3>
+
+    <div class="card shadow-sm mb-4">
+        <div class="card-body">
+            <div class="row align-items-end">
+                <div class="col-md-4">
+                    <label class="form-label fw-bold">Rapor Türü Seçiniz:</label>
+                    <select class="form-select" @bind="selectedReportType">
+                        <option value="Products">Ürün Listesi Raporu</option>
+                        <option value="Categories">Kategori Listesi Raporu</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <button class="btn btn-primary w-100" @onclick="PreviewReport" disabled="@isLoading">
+                        @if (isLoading)
+                        {
+                            <span class="spinner-border spinner-border-sm"></span> <span>Hazırlanıyor...</span>
+                        }
+                        else
+                        {
+                            <span><i class="bi bi-eye"></i> Raporu Görüntüle</span>
+                        }
+                    </button>
+                </div>
+                
+                @* SADECE RAPOR OLUŞTUYSA GÖZÜKECEK İNDİRME BUTONU *@
+                @if (pdfBytes != null)
+                {
+                    <div class="col-md-3">
+                        <button class="btn btn-success w-100" @onclick="DownloadReport">
+                            <i class="bi bi-download"></i> Raporu İndir
+                        </button>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+
+    @* PDF GÖSTERME ALANI (IFRAME) *@
+    <div class="card shadow border-0" style="height: 600px;">
+        <div class="card-body p-0 bg-light d-flex align-items-center justify-content-center">
+            
+            @* Başlangıçta boşken *@
+            @if (pdfBytes == null && !isLoading)
+            {
+                <div class="text-center text-muted">
+                    <i class="bi bi-file-earmark-pdf display-1"></i>
+                    <p class="mt-3 fs-5">Lütfen yukarıdan bir rapor seçip "Görüntüle" butonuna basın.</p>
+                </div>
+            }
+            
+            @* PDF Yüklendiğinde *@
+            <iframe id="pdfFrame" style="width:100%; height:100%; border:none; display: @(pdfBytes == null ? "none" : "block")"></iframe>
+        </div>
+    </div>
+</div>
+
+@code {
+    private string selectedReportType = "Products";
+    private byte[]? pdfBytes = null; // Oluşan PDF'i hafızada tutuyoruz
+    private bool isLoading = false;
+
+    private async Task PreviewReport()
+    {
+        isLoading = true;
+        pdfBytes = null; // Önceki raporu temizle
+        await Task.Delay(100); // UI güncellensin diye minik bekleme
+
+        try
+        {
+            if (selectedReportType == "Products")
+            {
+                // Tüm ürünleri çek
+                var model = new MyDbModel<Product> { Parameters = { PageSize = 10000 } };
+                var result = await Provider.Execute(model, "sp_Products_List", isPagination: true);
+                var data = result.Items.ToList();
+                
+                // PDF byte dizisini oluştur (Ama indirme!)
+                pdfBytes = ReportService.GenerateProductReport(data);
+            }
+            else if (selectedReportType == "Categories")
+            {
+                // Tüm kategorileri çek
+                var model = new MyDbModel<Category> { Parameters = { PageSize = 10000 } };
+                var result = await Provider.Execute(model, "sp_Categories_List", isPagination: true);
+                var data = result.Items.ToList();
+                
+                pdfBytes = ReportService.GenerateCategoryReport(data);
+            }
+
+            // Oluşan byte dizisini Iframe'e gönder (Görüntüleme)
+            if (pdfBytes != null)
+            {
+                using var stream = new MemoryStream(pdfBytes);
+                using var streamRef = new DotNetStreamReference(stream);
+                await JS.InvokeVoidAsync("viewPdf", "pdfFrame", streamRef);
+            }
+        }
+        catch (Exception ex)
+        {
+            await JS.InvokeVoidAsync("alert", "Rapor oluşturulurken hata: " + ex.Message);
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task DownloadReport()
+    {
+        if (pdfBytes == null) return;
+
+        // Zaten hafızada olan (pdfBytes) veriyi indiriyoruz. Tekrar SQL'e gitmeye gerek yok.
+        using var stream = new MemoryStream(pdfBytes);
+        using var streamRef = new DotNetStreamReference(stream);
+        
+        string fileName = $"{selectedReportType}_Raporu_{DateTime.Now:yyyyMMdd_HHmm}.pdf";
+        await JS.InvokeVoidAsync("downloadFileFromStream", fileName, streamRef);
+    }
+}

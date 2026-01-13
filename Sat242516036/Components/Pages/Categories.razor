@@ -1,0 +1,242 @@
+﻿@page "/categories"
+@using Microsoft.AspNetCore.Authorization
+@using Sat242516036.Data
+@using MyDbModels
+@using Providers
+
+@attribute [Authorize(Roles = "Admin")]
+
+@inject IMyDbModel_Provider Provider
+@inject IJSRuntime JS
+@rendermode InteractiveServer
+
+<PageTitle>Kategori Yönetimi</PageTitle>
+
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h3>Kategori Yönetimi</h3>
+        <button class="btn btn-primary" @onclick="OpenCreateModal">
+            <i class="bi bi-plus-circle"></i> Yeni Kategori
+        </button>
+    </div>
+
+    @* --- ARAMA KUTUSU --- *@
+    <div class="card mb-3">
+        <div class="card-body py-2">
+            <div class="row g-2">
+                <div class="col-md-4">
+                    <input type="text" class="form-control" placeholder="Kategori Ara..."
+                           @bind="filterName" @bind:event="oninput" @onkeyup="OnSearch" />
+                </div>
+                <div class="col-md-2">
+                    <button class="btn btn-secondary w-100" @onclick="ClearFilter">Temizle</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    @* --- TABLO --- *@
+    <div class="table-responsive">
+        <table class="table table-hover table-bordered">
+            <thead class="table-light">
+                <tr>
+                    <th style="cursor:pointer" @onclick='() => Sort("Id")'>ID @SortIcon("Id")</th>
+                    <th style="cursor:pointer" @onclick='() => Sort("CategoryName")'>Kategori Adı @SortIcon("CategoryName")</th>
+                    <th>Açıklama</th>
+                    <th>İşlemler</th>
+                </tr>
+            </thead>
+            <tbody>
+                @if (categories == null)
+                {
+                    <tr><td colspan="4" class="text-center">Yükleniyor...</td></tr>
+                }
+                else if (!categories.Any())
+                {
+                    <tr><td colspan="4" class="text-center">Kayıt bulunamadı.</td></tr>
+                }
+                else
+                {
+                    @foreach (var item in categories)
+                    {
+                        <tr>
+                            <td>@item.Id</td>
+                            <td>@item.CategoryName</td>
+                            <td>@item.Description</td>
+                            <td>
+                                <button class="btn btn-sm btn-warning me-1" @onclick="() => OpenEditModal(item)">
+                                    Düzenle
+                                </button>
+                                <button class="btn btn-sm btn-danger" @onclick="() => DeleteCategory(item)">
+                                    Sil
+                                </button>
+                            </td>
+                        </tr>
+                    }
+                }
+            </tbody>
+        </table>
+    </div>
+
+    @* --- SAYFALAMA --- *@
+    @if (myModel.Parameters.TotalPageCount > 1)
+    {
+        <nav>
+            <ul class="pagination justify-content-center">
+                <li class="page-item @(myModel.Parameters.PageNumber == 1 ? "disabled" : "")">
+                    <button class="page-link" @onclick="() => ChangePage(myModel.Parameters.PageNumber - 1)">Önceki</button>
+                </li>
+                <li class="page-item disabled">
+                    <span class="page-link">Sayfa @myModel.Parameters.PageNumber / @myModel.Parameters.TotalPageCount</span>
+                </li>
+                <li class="page-item @(myModel.Parameters.PageNumber == myModel.Parameters.TotalPageCount ? "disabled" : "")">
+                    <button class="page-link" @onclick="() => ChangePage(myModel.Parameters.PageNumber + 1)">Sonraki</button>
+                </li>
+            </ul>
+        </nav>
+    }
+</div>
+
+@* --- MODAL --- *@
+@if (showModal)
+{
+    <div class="modal fade show d-block" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">@(currentCategory.Id == 0 ? "Yeni Kategori" : "Kategori Düzenle")</h5>
+                    <button type="button" class="btn-close" @onclick="CloseModal"></button>
+                </div>
+                <div class="modal-body">
+                    <EditForm Model="currentCategory" OnValidSubmit="SaveCategory">
+                        <DataAnnotationsValidator />
+
+                        <div class="mb-3">
+                            <label>Kategori Adı</label>
+                            <InputText @bind-Value="currentCategory.CategoryName" class="form-control" />
+                            <ValidationMessage For="() => currentCategory.CategoryName" />
+                        </div>
+                        <div class="mb-3">
+                            <label>Açıklama</label>
+                            <InputTextArea @bind-Value="currentCategory.Description" class="form-control" />
+                        </div>
+
+                        <div class="d-flex justify-content-end gap-2">
+                            <button type="button" class="btn btn-secondary" @onclick="CloseModal">İptal</button>
+                            <button type="submit" class="btn btn-success">Kaydet</button>
+                        </div>
+                    </EditForm>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private MyDbModel<Category> myModel = new MyDbModel<Category>();
+    private IEnumerable<Category> categories;
+    private Category currentCategory = new();
+    private bool showModal = false;
+    private string filterName = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        myModel.Parameters.OrderBy = "Id";
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        myModel.Parameters.Where["CategoryName"] = filterName;
+        // sp_Categories_List prosedürünü çağırıyoruz
+        myModel = (MyDbModel<Category>)await Provider.Execute(myModel, "sp_Categories_List", isPagination: true);
+        categories = myModel.Items;
+    }
+
+    private async Task OnSearch()
+    {
+        myModel.Parameters.PageNumber = 1;
+        await LoadData();
+    }
+
+    private async Task ClearFilter()
+    {
+        filterName = "";
+        await OnSearch();
+    }
+
+    private async Task Sort(string columnName)
+    {
+        if (myModel.Parameters.OrderBy == columnName)
+            myModel.Parameters.OrderBy = columnName + " DESC";
+        else
+            myModel.Parameters.OrderBy = columnName;
+        await LoadData();
+    }
+
+    private string SortIcon(string columnName)
+    {
+        if (myModel.Parameters.OrderBy == columnName) return "▼";
+        if (myModel.Parameters.OrderBy == columnName + " DESC") return "▲";
+        return "";
+    }
+
+    private async Task ChangePage(int page)
+    {
+        myModel.Parameters.PageNumber = page;
+        await LoadData();
+    }
+
+    private void OpenCreateModal()
+    {
+        currentCategory = new Category();
+        showModal = true;
+    }
+
+    private void OpenEditModal(Category item)
+    {
+        currentCategory = new Category
+        {
+            Id = item.Id,
+            CategoryName = item.CategoryName,
+            Description = item.Description
+        };
+        showModal = true;
+    }
+
+    private void CloseModal() => showModal = false;
+
+    private async Task SaveCategory()
+    {
+        if (currentCategory.Id == 0)
+        {
+            // EKLEME
+            await Provider.Execute<Category>("sp_Categories_Ins",
+                ("Name", currentCategory.CategoryName),
+                ("Description", currentCategory.Description ?? "")
+            );
+        }
+        else
+        {
+            // GÜNCELLEME
+            await Provider.Execute<Category>("sp_Categories_Upd",
+                ("Id", currentCategory.Id),
+                ("Name", currentCategory.CategoryName),
+                ("Description", currentCategory.Description ?? "")
+            );
+        }
+        showModal = false;
+        await LoadData();
+    }
+
+    private async Task DeleteCategory(Category item)
+    {
+        bool confirmed = await JS.InvokeAsync<bool>("confirm", $"{item.CategoryName} silinecek. Emin misiniz?");
+        if (confirmed)
+        {
+            // SİLME
+            await Provider.Execute<Category>("sp_Categories_Del", ("Id", item.Id));
+            await LoadData();
+        }
+    }
+}

@@ -1,0 +1,124 @@
+﻿@page "/"
+@using Sat242516036.Data
+@using MyDbModels
+@using Providers
+@using ApexCharts
+
+@inject IMyDbModel_Provider Provider
+
+<PageTitle>Anasayfa - Dashboard</PageTitle>
+
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col-12">
+            <h1 class="display-6 fw-bold text-primary">
+                <i class="bi bi-speedometer2"></i> Yönetim Paneli
+            </h1>
+            <p class="text-muted">Sistem durumuna genel bakış.</p>
+        </div>
+    </div>
+
+    @if (isLoading)
+    {
+        <div class="text-center mt-5">
+            <div class="spinner-border text-primary" role="status"></div>
+            <p class="mt-2">Veriler yükleniyor...</p>
+        </div>
+    }
+    else
+    {
+        @* --- ÖZET KARTLAR --- *@
+        <div class="row mb-4">
+            <div class="col-md-4">
+                <div class="card text-white bg-primary shadow-sm h-100">
+                    <div class="card-body text-center">
+                        <h5 class="card-title">Toplam Ürün</h5>
+                        <h2 class="display-4 fw-bold">@products.Count</h2>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card text-white bg-success shadow-sm h-100">
+                    <div class="card-body text-center">
+                        <h5 class="card-title">Toplam Stok</h5>
+                        <h2 class="display-4 fw-bold">@products.Sum(x => x.StockQuantity)</h2>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card text-white bg-danger shadow-sm h-100">
+                    <div class="card-body text-center">
+                        <h5 class="card-title">Kritik Stok (10)</h5>
+                        <h2 class="display-4 fw-bold">@products.Count(x => x.StockQuantity < 10)</h2>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        @* --- GRAFİK ALANI --- *@
+        <div class="row">
+            <div class="col-lg-8 mx-auto">
+                <div class="card shadow border-0">
+                    <div class="card-header bg-white py-3">
+                        <h5 class="mb-0 fw-bold text-secondary">
+                            <i class="bi bi-bar-chart-fill"></i> Ürün Stok Analizi
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <ApexChart TItem="Product"
+                                   Title="Ürünlere Göre Stok Miktarları"
+                                   Options="options">
+
+                            <ApexPointSeries TItem="Product"
+                                             Items="products"
+                                             Name="Stok Adedi"
+                                             SeriesType="SeriesType.Bar"
+                                             XValue="e => e.ProductName"
+                                             YValue="e => e.StockQuantity" />
+                        </ApexChart>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    // Listeyi boş başlatıyoruz ki null hatası vermesin
+    private List<Product> products = new List<Product>();
+    private bool isLoading = true;
+    private ApexChartOptions<Product> options = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        options.Theme = new Theme { Mode = Mode.Light, Palette = PaletteType.Palette1 };
+        options.Chart = new Chart { Toolbar = new Toolbar { Show = false } };
+        
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        try
+        {
+            var model = new MyDbModel<Product> { Parameters = { PageSize = 100 } };
+            var result = await Provider.Execute(model, "sp_Products_List", isPagination: true);
+            
+            if(result.Items != null)
+            {
+                products = result.Items
+                                 .OrderByDescending(p => p.StockQuantity)
+                                 .Take(10)
+                                 .ToList();
+            }
+        }
+        catch (Exception)
+        {
+            products = new List<Product>();
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+}

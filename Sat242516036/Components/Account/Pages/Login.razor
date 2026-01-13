@@ -1,0 +1,94 @@
+﻿@page "/Account/Login"
+
+@using System.ComponentModel.DataAnnotations
+@using Microsoft.AspNetCore.Authentication
+@using Microsoft.AspNetCore.Identity
+@using Sat242516036.Data
+
+@inject SignInManager<ApplicationUser> SignInManager
+@inject ILogger<Login> Logger
+@inject NavigationManager NavigationManager
+
+<PageTitle>Giriş Yap - Müşteri Sadakat</PageTitle>
+
+<div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-md-5">
+            <div class="card shadow-lg border-0">
+                <div class="card-header bg-primary text-white text-center py-3">
+                    <h3><i class="bi bi-shield-lock"></i> Giriş Yap</h3>
+                </div>
+                <div class="card-body p-4">
+                    <EditForm Model="Input" OnValidSubmit="LoginUser" FormName="login">
+                        <DataAnnotationsValidator />
+
+                        @if (!string.IsNullOrEmpty(errorMessage))
+                        {
+                            <div class="alert alert-danger">@errorMessage</div>
+                        }
+
+                        <div class="form-floating mb-3">
+                            <InputText id="email" @bind-Value="Input.Email" class="form-control" placeholder="name@example.com" />
+                            <label for="email">E-Posta Adresi</label>
+                            <ValidationMessage For="() => Input.Email" class="text-danger" />
+                        </div>
+
+                        <div class="form-floating mb-3">
+                            <InputText id="password" type="password" @bind-Value="Input.Password" class="form-control" placeholder="password" />
+                            <label for="password">Şifre</label>
+                            <ValidationMessage For="() => Input.Password" class="text-danger" />
+                        </div>
+
+                        <div class="form-check mb-3">
+                            <InputCheckbox @bind-Value="Input.RememberMe" class="form-check-input" id="rememberMe" />
+                            <label class="form-check-label" for="rememberMe">Beni Hatırla</label>
+                        </div>
+
+                        <button type="submit" class="btn btn-primary w-100 py-2 fs-5">Giriş Yap</button>
+                    </EditForm>
+                </div>
+                <div class="card-footer text-center py-3">
+                    Hesabınız yok mu? <a href="Account/Register" class="text-decoration-none fw-bold">Kayıt Ol</a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    [SupplyParameterFromForm]
+    private InputModel Input { get; set; } = new();
+
+    [SupplyParameterFromQuery]
+    private string? ReturnUrl { get; set; }
+
+    private string? errorMessage;
+
+    public async Task LoginUser()
+    {
+        var result = await SignInManager.PasswordSignInAsync(Input.Email, Input.Password, Input.RememberMe, lockoutOnFailure: false);
+
+        if (result.Succeeded)
+        {
+            Logger.LogInformation("Kullanıcı giriş yaptı.");
+            NavigationManager.NavigateTo(ReturnUrl ?? "/");
+        }
+        else
+        {
+            errorMessage = "Giriş başarısız. Lütfen bilgilerinizi kontrol ediniz.";
+        }
+    }
+
+    private sealed class InputModel
+    {
+        [Required]
+        [EmailAddress]
+        public string Email { get; set; } = "";
+
+        [Required]
+        [DataType(DataType.Password)]
+        public string Password { get; set; } = "";
+
+        public bool RememberMe { get; set; }
+    }
+}
